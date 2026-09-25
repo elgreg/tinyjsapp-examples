@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<!--
+  Pose/orientation/axis grid for a new model, rendered with the app's own
+  camera (0.34, 0.5, 1.1 → 0, 0.15, 0) in 200×200 cells like the real window.
+  Copy next to three.bundle.js + pigeon-model.js + <name>-model.js, open with
+  the puppeteer MCP (file://…/preview.html?…), then screenshot.
+
+  ?m=bear-model.js:BEAR_GLB_B64      the model under test (pigeon always loads)
+  &cz=1                               camera distance factor (0.6 = closer)
+  &cells=[[label, model, clip, time, yaw, scale], …]   (JSON, url-encoded)
+     model: "pigeon" or "test"; clip: the app.js short() key ('walk',
+     'stand eating') or "none" for bind pose
+     label "bone <Name> <x|y|z> <rad>"  → rotates that bone post-mix (hinge hunting)
+     label "hide <regex> <scale>"       → scales matching bones (wing folding)
+  The <pre> at the bottom lists bounding boxes + clip names/durations.
+-->
+<style>
+  body { margin: 0; background: #7f93a8; font: 11px monospace; color: #fff; }
+  #grid { display: grid; grid-template-columns: repeat(4, 200px); gap: 4px; padding: 4px; }
+  .cell { position: relative; background: #8fa3b8; }
+  .cell span { position: absolute; left: 4px; top: 2px; }
+</style></head>
+<body>
+<div id="grid"></div>
+<pre id="info"></pre>
+<script src="three.bundle.js"></script>
+<script src="pigeon-model.js"></script>
+<script>
+const q = new URLSearchParams(location.search);
+const [testFile, testGlobal] = (q.get('m') || '').split(':');
+const CELLS = JSON.parse(q.get('cells') || '[]');
+const cz = parseFloat(q.get('cz') || '1');
+const key = (c) => { const s = c.name.split('|').pop(); return (s.includes(' ') ? s : s.split('_').pop()).toLowerCase(); };
+const decode = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
+const b64 = (k) => (k === 'pigeon' ? PIGEON_GLB_B64 : window[testGlobal] ?? eval(testGlobal));
+const load = (k) => new Promise((res, rej) => new GLTFLoader().parse(decode(b64(k)), '', res, rej));
+const info = [];
+window.done = false;
+(async () => {
+  if (testFile) await new Promise((res, rej) => { const s = document.createElement('script'); s.src = testFile; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+  for (const k of ['pigeon', ...(testFile ? ['test'] : [])]) {
+    const g = await load(k);
+    const box = new THREE.Box3().setFromObject(g.scene);
+    info.push(k + ' box ' + box.min.toArray().map((v) => v.toFixed(3)) + ' .. ' + box.max.toArray().map((v) => v.toFixed(3)));
+    info.push(k + ' clips ' + g.animations.map((a) => key(a) + ':' + a.duration.toFixed(2)).join(' | '));
+    const bones = []; g.scene.traverse((o) => { if (o.isBone) bones.push(o.name); });
+    info.push(k + ' bones ' + bones.join(' '));
+  }
+  for (const [label, which, clipName, time, yaw, sc] of CELLS) {
+    const cell = document.createElement('div'); cell.className = 'cell';
+    const cv = document.createElement('canvas'); cell.appendChild(cv);
+    const sp = document.createElement('span'); sp.textContent = label; cell.appendChild(sp);
+    document.getElementById('grid').appendChild(cell);
+    const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true, preserveDrawingBuffer: true });
+    renderer.setSize(200, 200);
+    const scene = new THREE.Scene();
+    const cam = new THREE.PerspectiveCamera(30, 1, 0.01, 50);
+    cam.position.set(0.34 * cz, 0.15 + 0.35 * cz, 1.1 * cz); cam.lookAt(0, 0.15, 0);
+    scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x8a7a66, 1.5));
+    const kl = new THREE.DirectionalLight(0xffffff, 2.2); kl.position.set(1.5, 3, 2); scene.add(kl);
+    const g = await load(which);          // fresh parse per cell: independent skeletons
+    const model = g.scene;
+    model.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+    model.scale.setScalar(sc ?? 1);
+    model.rotation.y = yaw;
+    scene.add(model);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.01), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+    floor.position.set(0, 0, 0.3); scene.add(floor);             // y = 0 marker
+    const mixer = new THREE.AnimationMixer(model);
+    const clip = g.animations.find((a) => key(a) === clipName);
+    if (clip) { mixer.clipAction(clip).play(); mixer.update(time); }
+    let m = /^bone (\S+) ([xyz]) (-?[\d.]+)$/.exec(label);
+    if (m) model.traverse((o) => { if (o.isBone && o.name === m[1]) o['rotate' + m[2].toUpperCase()](parseFloat(m[3])); });
+    m = /^hide (\S+) ([\d.]+)$/.exec(label);
+    if (m) { const re = new RegExp(m[1]); model.traverse((o) => { if (o.isBone && re.test(o.name)) o.scale.setScalar(parseFloat(m[2])); }); }
+    renderer.render(scene, cam);
+  }
+  document.getElementById('info').textContent = info.join('\n');
+  window.done = true;
+})().catch((e) => { document.getElementById('info').textContent = 'ERR ' + e.stack; window.done = true; });
+</script>
+</body></html>

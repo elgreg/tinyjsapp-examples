@@ -99,6 +99,7 @@ let opts = {                  // persisted tray toggles
   shhh: false,                // library mode — only the occasional sound slips out
   grounded: false,            // ground business stays near the screen bottom
   noPoop: false,              // house-trained — the poop timer still runs, the squat never comes
+  species: 'pigeon',          // who's in the flock: pigeon | finch (goldfinches)
   count: 3,                   // pigeons in the flock, 2..20
 };
 const VOLS = { off: 0, low: 0.25, medium: 0.6, high: 1 };
@@ -183,25 +184,35 @@ function setState(app, b, s) {
   if (s === 'fly') say(app, b, b.scared ? 'scatter' : 'takeoff', b.scared);
 }
 
-const mood = () => (anyCrumbs() ? '🍞' : '🕊️');
+// Same brain, different costumes.
+const SPECIES = {
+  pigeon: { icon: '🕊️', one: 'pigeon', many: 'pigeons', food: '🍞 Throw some crumbs', foodIcon: '🍞' },
+  finch:  { icon: '🐤', one: 'goldfinch', many: 'goldfinches', food: '🍞 Throw some crumbs', foodIcon: '🍞' },
+};
+const sp = () => SPECIES[opts.species] || SPECIES.pigeon;
+const mood = () => (anyCrumbs() ? sp().foodIcon : sp().icon);
 
 let lastTray = '';
 function trayUpdate(app) {
-  const sig = mood() + anyCrumbs() + anyPoop() + opts.desk + opts.volume + opts.shhh + opts.grounded + opts.noPoop + opts.count;
+  const sig = mood() + anyCrumbs() + anyPoop() + opts.desk + opts.volume + opts.shhh + opts.grounded + opts.noPoop + opts.species + opts.count;
   if (sig === lastTray) return;            // tray.set repaints — only on change
   lastTray = sig;
   const tick = (on) => (on ? '✓ ' : '   ');
   app.tray.set({
     title: mood(),
     menu: [
-      { id: 'crumbs', label: '🍞 Throw some crumbs  ⌘⌥X' },
+      { id: 'crumbs', label: `${sp().food}  ⌘⌥X` },
       { id: 'sweep', label: '🧹 Sweep up (crumbs & poop)  ⌘⌥⇧X', enabled: anyCrumbs() || anyPoop() },
-      { id: 'find', label: '👋 Where are the pigeons?' },
+      { id: 'find', label: `👋 Where are the ${sp().many}?` },
       { separator: true },
-      { id: 'more', label: `➕ One more pigeon (${opts.count})`, enabled: opts.count < MAX_PIGS },
-      { id: 'fewer', label: `➖ One fewer pigeon`, enabled: opts.count > 2 },
+      { id: 'more', label: `➕ One more ${sp().one} (${opts.count})`, enabled: opts.count < MAX_PIGS },
+      { id: 'fewer', label: `➖ One fewer ${sp().one}`, enabled: opts.count > 2 },
       { id: 'pandemonium', label: `🌪️ Pandemonium (all ${MAX_PIGS === 20 ? 'twenty' : MAX_PIGS}, at once)`, enabled: opts.count < MAX_PIGS },
-      { id: 'reset', label: '🧼 Fresh start (two pigeons, clean floor)' },
+      { id: 'reset', label: `🧼 Fresh start (two ${sp().many}, clean floor)` },
+      { id: 'species', label: '🐾 Animals', submenu: [
+        { id: 'sp-pigeon', label: '🕊️ Pigeons', checked: opts.species === 'pigeon' },
+        { id: 'sp-finch', label: '🐤 Goldfinches', checked: opts.species === 'finch' },
+      ] },
       { separator: true },
       { id: 'desk', label: tick(opts.desk) + '🖥️ Live on the desktop' },
       { id: 'grounded', label: tick(opts.grounded) + '🌱 Grounded (keep to the bottom)' },
@@ -219,6 +230,15 @@ function trayUpdate(app) {
       { id: 'quit', label: 'Quit Coo 3D' },
     ],
   });
+}
+
+function setCtxMenu(app) {
+  app.setContextMenu([
+    { id: 'crumbs', label: sp().food },
+    ...(ON_WAYLAND ? [{ id: 'track', label: '🖱️ Follow mouse everywhere…' }] : []),
+    { separator: true },
+    { id: 'quit', label: 'Quit Coo 3D' },
+  ]);
 }
 
 // Window level, applied to everything — and EVERYTHING is click-through,
@@ -991,6 +1011,7 @@ export const api = {
       if ('sound' in opts) { opts.volume = opts.sound ? 'medium' : 'off'; delete opts.sound; }
       if (!(opts.volume in VOLS)) opts.volume = 'medium';
       opts.count = clamp(opts.count, 2, MAX_PIGS);
+      if (!SPECIES[opts.species]) opts.species = 'pigeon';
       const st = await app.getWinState();
       screen = { w: st.screen.width, h: st.screen.height };
       const m = cursor();
@@ -1008,12 +1029,7 @@ export const api = {
       app.setAlwaysOnTop(true);
       app.setResizable(false);
       app.show({ activate: false });                // accessory apps start hidden — position first
-      app.setContextMenu([
-        { id: 'crumbs', label: '🍞 Throw some crumbs' },
-        ...(ON_WAYLAND ? [{ id: 'track', label: '🖱️ Follow mouse everywhere…' }] : []),
-        { separator: true },
-        { id: 'quit', label: 'Quit Coo 3D' },
-      ]);
+      setCtxMenu(app);
       try { app.hotkey.register('crumbs', 'cmd+alt+x'); } catch { /* taken — the menu still works */ }
       try { app.hotkey.register('sweep', 'cmd+alt+shift+x'); } catch { /* taken — the menu still works */ }
       trayUpdate(app);
@@ -1060,12 +1076,21 @@ export const api = {
     }
     if (POOP_POOL.includes(id)) return { on: !!poops[id] };
     const b = birds[PIGS.indexOf(id)];
-    return { state: b.state, env: envInfo(), shine: b.shine };
+    return { state: b.state, env: envInfo(), shine: b.shine, species: opts.species };
   },
 };
 
 function onCommand(id, app) {
-  if (id.startsWith('vol-')) {
+  if (id.startsWith('sp-')) {
+    // every window swaps its costume in place; the brain doesn't care who's wearing it
+    opts.species = id.slice(3);
+    applyOpts(app);
+    sweep(app);                  // new animals, clean floor
+    setCtxMenu(app);
+    app.push('species', { species: opts.species });
+    lastTray = '';
+    trayUpdate(app);
+  } else if (id.startsWith('vol-')) {
     opts.volume = id.slice(4);
     applyOpts(app);
     lastTray = '';

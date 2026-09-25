@@ -17,6 +17,10 @@ stays. There's a broom in the tray.
 
 Animated pigeon from [AnimalMesh3D](https://www.patreon.com/cw/AnimalMesh3D)
 
+Goldfinch (🐾 Animals menu) based on ["Animated Sparrow – 3D Animal Model"](https://sketchfab.com/3d-models/animated-sparrow-3d-animal-model-026d23b0c0954f328694cb339ade4045)
+by [AnimalMesh 3D](https://sketchfab.com/AnimalMesh3D), CC-BY-4.0 — repainted in goldfinch colours.
+Goldfinch calls and song cut from [XC1090058](https://xeno-canto.org/1090058) by Manuel Grosselet (Moss Landing, CA) on xeno-canto, [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) — trimmed, filtered and denoised.
+
 ```sh
 tinyjs dev      # run with hot reload
 tinyjs build    # package dist/Coo 3D.app — a whole flock in ~7.5 MB

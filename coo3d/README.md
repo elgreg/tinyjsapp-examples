@@ -22,7 +22,7 @@ tinyjs dev      # run with hot reload
 tinyjs build    # package dist/Coo 3D.app — a whole flock in ~7.5 MB
 ```
 
-Throw crumbs from the 🕊️ menu-bar item or **⌃⌥C** — each throw lands at a
+Throw crumbs from the 🕊️ menu-bar item or **⌘⌥X** — each throw lands at a
 random spot, up to six piles can be out at once, and the flock trots (or
 flies) in to crowd them. Everything is **permanently click-through**: birds,
 crumbs, poop — the flock lives on your screen but can never trap your mouse,

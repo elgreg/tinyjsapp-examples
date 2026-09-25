@@ -98,6 +98,7 @@ let opts = {                  // persisted tray toggles
   volume: 'medium',           // how loud the coo is: off | low | medium | high
   shhh: false,                // library mode — only the occasional sound slips out
   grounded: false,            // ground business stays near the screen bottom
+  noPoop: false,              // house-trained — the poop timer still runs, the squat never comes
   count: 3,                   // pigeons in the flock, 2..20
 };
 const VOLS = { off: 0, low: 0.25, medium: 0.6, high: 1 };
@@ -186,15 +187,15 @@ const mood = () => (anyCrumbs() ? '🍞' : '🕊️');
 
 let lastTray = '';
 function trayUpdate(app) {
-  const sig = mood() + anyCrumbs() + anyPoop() + opts.desk + opts.volume + opts.shhh + opts.grounded + opts.count;
+  const sig = mood() + anyCrumbs() + anyPoop() + opts.desk + opts.volume + opts.shhh + opts.grounded + opts.noPoop + opts.count;
   if (sig === lastTray) return;            // tray.set repaints — only on change
   lastTray = sig;
   const tick = (on) => (on ? '✓ ' : '   ');
   app.tray.set({
     title: mood(),
     menu: [
-      { id: 'crumbs', label: '🍞 Throw some crumbs  ⌃⌥C' },
-      { id: 'sweep', label: '🧹 Sweep up (crumbs & poop)', enabled: anyCrumbs() || anyPoop() },
+      { id: 'crumbs', label: '🍞 Throw some crumbs  ⌘⌥X' },
+      { id: 'sweep', label: '🧹 Sweep up (crumbs & poop)  ⌘⌥⇧X', enabled: anyCrumbs() || anyPoop() },
       { id: 'find', label: '👋 Where are the pigeons?' },
       { separator: true },
       { id: 'more', label: `➕ One more pigeon (${opts.count})`, enabled: opts.count < MAX_PIGS },
@@ -204,6 +205,7 @@ function trayUpdate(app) {
       { separator: true },
       { id: 'desk', label: tick(opts.desk) + '🖥️ Live on the desktop' },
       { id: 'grounded', label: tick(opts.grounded) + '🌱 Grounded (keep to the bottom)' },
+      { id: 'noPoop', label: tick(opts.noPoop) + '🚽 House-trained (no pooping)' },
       { id: 'vol', label: '🔊 Coo volume', submenu: [
         { id: 'vol-off', label: 'Off', checked: opts.volume === 'off' },
         { id: 'vol-low', label: 'Low', checked: opts.volume === 'low' },
@@ -605,7 +607,7 @@ function tickBird(app, b, m, mv) {
     }
   } else if (b.state === 'poop') {
     // hold still, lift the tail (the page does the acting)… and there it is
-    if (b.stateT === 14) spawnPoop(app, b);
+    if (b.stateT === 14 && !opts.noPoop) spawnPoop(app, b);
     if (b.stateT > b.dur) { setState(app, b, 'idle'); b.idleFor = rnd(30, 140); }
   } else if (b.noticeIn === 0 && nearestPile(b) && b.state !== 'coo' && b.state !== 'circle') {
     // Bread on the ground beats everything social. Trot over — fly if far.
@@ -676,7 +678,9 @@ function tickBird(app, b, m, mv) {
   } else {
     // Idle. Keep an eye on the cursor, and every so often pick a new hobby.
     if (d < fleeRadius(b) * 2.4) { focus = m; b.dir = dx >= 0 ? 1 : -1; }
-    if (b.poopIn <= 0) {
+    if (b.poopIn <= 0 && opts.noPoop) {
+      b.poopIn = Math.round(rnd(1100, 2600));        // house-trained: skip it
+    } else if (b.poopIn <= 0) {
       b.poopIn = Math.round(rnd(1100, 2600));        // 44–104 s till next
       b.dur = 24;
       setState(app, b, 'poop');
@@ -1010,7 +1014,8 @@ export const api = {
         { separator: true },
         { id: 'quit', label: 'Quit Coo 3D' },
       ]);
-      try { app.hotkey.register('crumbs', 'ctrl+alt+c'); } catch { /* taken — the menu still works */ }
+      try { app.hotkey.register('crumbs', 'cmd+alt+x'); } catch { /* taken — the menu still works */ }
+      try { app.hotkey.register('sweep', 'cmd+alt+shift+x'); } catch { /* taken — the menu still works */ }
       trayUpdate(app);
       // The rest of the flock, plus the crumb piles and… the other windows.
       for (let i = 1; i < opts.count; i++) openPigeon(app, birds[i]);
@@ -1065,7 +1070,7 @@ function onCommand(id, app) {
     applyOpts(app);
     lastTray = '';
     trayUpdate(app);
-  } else if (id === 'desk' || id === 'shhh' || id === 'grounded') {
+  } else if (id === 'desk' || id === 'shhh' || id === 'grounded' || id === 'noPoop') {
     opts[id] = !opts[id];
     applyOpts(app);
     lastTray = '';
@@ -1133,8 +1138,9 @@ export function onTray(id, app) {
   if (id === 'check-updates') return checkForUpdates(app); onCommand(id, app); }
 export function onContextMenu(id, app) { onCommand(id, app); }
 export function onHotkey(id, app) {
-  // The hotkey always throws a fresh handful.
+  // ⌘⌥X always throws a fresh handful; ⌘⌥⇧X sweeps everything up.
   if (id === 'crumbs') dropCrumbs(app);
+  else if (id === 'sweep') sweep(app);
 }
 
 export function init() {

@@ -6,8 +6,7 @@
   "version": "0.2.7",
   "minTinyjsVersion": "0.30.0",
   "update": {
-    "url": "https://raw.githubusercontent.com/tarwin/tinyjsapp-examples/main/_builds/coo3d/manifest.json",
-    "auto": "daily"
+    "url": "https://raw.githubusercontent.com/tarwin/tinyjsapp-examples/main/_builds/coo3d/manifest.json"
   },
   "activation": "accessory",
   "chrome": {

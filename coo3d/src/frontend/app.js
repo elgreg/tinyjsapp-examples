@@ -24,7 +24,7 @@ const TINT = [0, 0x9096a3, 0xc2a78f, 0xdcdfe4, 0x71767f,
               0xa8988a, 0x848b99, 0xcfc9bd, 0x99856f, 0x5f646e][idx % 10];
 const SIZE = 1 + (((idx * 37) % 15) - 7) / 100;
 
-// Several costumes, one brain — the tray's 🐾 Animals menu picks who shows up
+// Three costumes, one brain — the tray's 🐾 Animals menu picks who shows up
 // and every window swaps in place. Each model file is only loaded (a script
 // tag, on demand) once somebody picks that animal. The goldfinch is AnimalMesh3D's sparrow rig,
 // repainted: its six clips stand in for the pigeon's eleven (a hop for the
@@ -41,6 +41,19 @@ const SPECIES = {
             clips: { idle: 'look', idleloop: 'look', left: 'shake', right: 'shake',
                      walk: 'jump', peck: 'bite', cooing: 'look', circle: 'shake',
                      takeoff: 'jump', flyloop: 'fly', land: 'jump' } },
+  // The bear (AnimalMesh3D, 11 of its 30 clips kept) does everything on foot:
+  // flights are a run, the strut stands up on its hind legs, loafing lies
+  // down, and the poop squat tips the pelvis so the rump drops. Its root
+  // motion lives on RigPelvis, whose local Y is forward and Z is up.
+  bear:   { b64: () => BEAR_GLB_B64, script: 'bear-model.js', flip: false, tint: false,
+            scale: 0.11, center: true,
+            bones: { hips: 'RigPelvis_04', tail: 'RigTail1_032', spine: 'RigSpine1_09' },
+            pin: { re: /RigPelvis_04\.position$/, keep: 2 },
+            squat: { tail: 0, hips: -0.35, spine: 0.35 },   // spine keeps the front paws down
+            clips: { idle: 'stand breathing', idleloop: 'stand breathing', loaf: 'lying breathing',
+                     squat: 'stand breathing', left: 'stand2', right: 'stand angry breathing',
+                     walk: 'walk', peck: 'stand eating', cooing: 'stand angry breathing2',
+                     circle: 'hind breathing', takeoff: 'trot', flyloop: 'run', land: 'walk slow' } },
 };
 // the finch model is on-demand too
 SPECIES.finch.script = 'finch-model.js';
@@ -521,10 +534,24 @@ const FINCH_KINDS = {
   scatter: { names: ['flap_away', 'flap_away2'], rate: [1.4, 1.65], gain: 0.5 },
   distant: { names: ['xc-song-1', 'xc-song-2', 'xc-song-3', 'xc-song-4'], rate: [0.98, 1.02], gain: 0.12 },
 };
+// Bears (bear-sound.js, cut from NPS recordings — see README): low moaning
+// grumbles for a coo, a full roar for the hind-leg display, huffs when
+// spooked, and bone-crunching while they work through a salmon. No wings, so
+// no take-off sound; the distant ambience is a far-off roar.
+const BEAR_KINDS = {
+  coo:     { names: ['b-grumble-1', 'b-grumble-2', 'b-grumble-3', 'b-grumble-4'], rate: [0.9, 1.05], gain: 0.55 },
+  coolong: { names: ['b-roar-1', 'b-roar-2', 'b-roar-3'], rate: [0.94, 1.04], gain: 0.55 },
+  call:    { names: ['b-huff-1', 'b-huff-3'], rate: [0.95, 1.05], gain: 0.55 },
+  scatter: { names: ['b-huff-1', 'b-huff-3'], rate: [1.0, 1.1], gain: 0.5 },
+  munch:   { names: ['b-munch-1', 'b-munch-2', 'b-munch-3', 'b-munch-4', 'b-munch-5', 'b-munch-6'],
+             rate: [0.92, 1.08], gain: 0.5 },
+  distant: { names: ['b-roar-1', 'b-roar-2', 'b-roar-3'], rate: [0.9, 0.96], gain: 0.1 },
+};
 // The pigeon bank ships with the page (its wing-flaps serve everyone); the
-// goldfinch bank is fetched on demand, like its model.
+// goldfinch and bear banks are fetched on demand, like their models.
 const BANKS = {
   finch: { script: 'finch-sound.js', data: () => FINCH_SND_B64 },
+  bear:  { script: 'bear-sound.js', data: () => BEAR_SND_B64 },
 };
 const bankSent = new Set();
 const bankReady = new Set();   // names whose decode has confirmed — playable
@@ -547,7 +574,7 @@ function ensureAudio() {
 }
 function playKind(kind, pan, vol) {
   ensureAudio();
-  const k = ({ finch: FINCH_KINDS }[species] || KINDS)[kind];
+  const k = ({ finch: FINCH_KINDS, bear: BEAR_KINDS }[species] || KINDS)[kind];
   if (!k) return;
   const loaded = k.names.filter((n) => bankReady.has(n));
   if (!loaded.length) return;  // still decoding — skip, same as before

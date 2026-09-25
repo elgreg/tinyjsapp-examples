@@ -26,6 +26,121 @@ const ctx = cv.getContext('2d');
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 let crumbs = [];
+let species = 'pigeon';
+
+// ------------------------------------------------------------------ salmon
+// Bears get a whole salmon instead. It's drawn once into a flesh layer; each
+// bite punches a ragged hole in that layer (starting at the belly, the bit a
+// bear wants), so the skeleton drawn underneath shows through — and the
+// last bites leave just bones, head and tail.
+let fish = null;                     // { flesh: canvas, total, bites: [] }
+const FX = 75, FY = 62, FL = 58;     // centre + length of the fish on the ground
+
+function fishPath(c, x, y, len, h) {
+  c.beginPath();
+  c.moveTo(x - len / 2, y);
+  c.bezierCurveTo(x - len * 0.3, y - h, x + len * 0.25, y - h * 1.05, x + len * 0.42, y - h * 0.2);
+  c.quadraticCurveTo(x + len / 2, y, x + len * 0.42, y + h * 0.25);
+  c.bezierCurveTo(x + len * 0.2, y + h * 0.95, x - len * 0.3, y + h * 0.8, x - len / 2, y);
+  c.closePath();
+}
+
+function makeFish(total) {
+  const flesh = document.createElement('canvas');
+  flesh.width = 150; flesh.height = 110;
+  const c = flesh.getContext('2d');
+  const tilt = rnd(-0.18, 0.18);
+  c.translate(FX, FY); c.rotate(tilt); c.translate(-FX, -FY);
+  const h = 9.5;
+  // body: silver belly, pink-red flank (spawning sockeye colours), dark back
+  const g = c.createLinearGradient(0, FY - h, 0, FY + h);
+  g.addColorStop(0, '#3d4f4a');
+  g.addColorStop(0.35, '#b8484a');
+  g.addColorStop(0.7, '#d98a7c');
+  g.addColorStop(1, '#e9e4dc');
+  fishPath(c, FX - 4, FY, FL, h);
+  c.fillStyle = g; c.fill();
+  // speckles on the back
+  c.fillStyle = 'rgba(25, 30, 28, 0.55)';
+  for (let i = 0; i < 26; i++) {
+    const px = FX - FL * 0.35 + Math.random() * FL * 0.7, py = FY - h * 0.55 + Math.random() * h * 0.45;
+    c.beginPath(); c.arc(px, py, rnd(0.5, 1.1), 0, Math.PI * 2); c.fill();
+  }
+  // tail fin
+  c.fillStyle = '#4a4f4c';
+  c.beginPath();
+  c.moveTo(FX - FL / 2 - 2, FY);
+  c.lineTo(FX - FL / 2 - 13, FY - 9);
+  c.quadraticCurveTo(FX - FL / 2 - 8, FY, FX - FL / 2 - 13, FY + 9);
+  c.closePath(); c.fill();
+  // head: darker, a gill line and an eye
+  c.strokeStyle = 'rgba(40, 30, 30, 0.6)'; c.lineWidth = 1;
+  c.beginPath(); c.arc(FX + FL * 0.28, FY, h * 0.8, -1.1, 1.1); c.stroke();
+  c.fillStyle = '#f2efe6'; c.beginPath(); c.arc(FX + FL * 0.36, FY - 2.5, 1.8, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#111'; c.beginPath(); c.arc(FX + FL * 0.365, FY - 2.5, 1, 0, Math.PI * 2); c.fill();
+  // a wet highlight along the upper flank (sun up-right)
+  c.strokeStyle = 'rgba(255, 255, 255, 0.35)'; c.lineWidth = 1.4;
+  c.beginPath(); c.moveTo(FX - FL * 0.25, FY - h * 0.55); c.quadraticCurveTo(FX, FY - h * 0.85, FX + FL * 0.2, FY - h * 0.6); c.stroke();
+  // bites: belly-first, working along the body; head and tail stay
+  const bites = [];
+  for (let i = 0; i < total; i++) {
+    const t = (i + 0.5) / total;
+    bites.push({ x: FX - FL * 0.3 + t * FL * 0.55 + rnd(-4, 4), y: FY + rnd(-3, 5), r: rnd(6, 8.5) });
+  }
+  bites.sort(() => Math.random() - 0.5);
+  return { flesh, tilt, total, bites, eaten: 0 };
+}
+
+function biteFish(n) {
+  const c = fish.flesh.getContext('2d');
+  c.save();
+  c.globalCompositeOperation = 'destination-out';
+  while (fish.eaten < n && fish.eaten < fish.bites.length) {
+    const b = fish.bites[fish.eaten++];
+    // a ragged bite: a few overlapping discs
+    for (let k = 0; k < 4; k++) {
+      c.beginPath(); c.arc(b.x + rnd(-3, 3), b.y + rnd(-2.5, 2.5), b.r * rnd(0.55, 0.9), 0, Math.PI * 2); c.fill();
+    }
+  }
+  c.restore();
+}
+
+function drawFish() {
+  ctx.clearRect(0, 0, 150, 110);
+  // contact shadow, down-left of the fish
+  ctx.save();
+  ctx.translate(FX - 4, FY + 8); ctx.scale(1, 0.28);
+  ctx.fillStyle = 'rgba(20, 16, 8, 0.3)';
+  ctx.beginPath(); ctx.arc(0, 0, FL * 0.55, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  // skeleton underneath: spine + ribs, only seen where the flesh is gone
+  ctx.save();
+  ctx.translate(FX, FY); ctx.rotate(fish.tilt); ctx.translate(-FX, -FY);
+  fishPath(ctx, FX - 4, FY, FL * 0.97, 8.6);    // ribs stay inside the body
+  ctx.clip();
+  ctx.strokeStyle = '#efe9dc'; ctx.lineCap = 'round';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(FX - FL / 2, FY); ctx.lineTo(FX + FL * 0.3, FY); ctx.stroke();
+  ctx.lineWidth = 1;
+  for (let x = FX - FL * 0.36; x < FX + FL * 0.24; x += 4.2) {
+    ctx.beginPath(); ctx.moveTo(x, FY); ctx.quadraticCurveTo(x + 2, FY - 5, x + 3, FY - 8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, FY); ctx.quadraticCurveTo(x + 2, FY + 5, x + 3, FY + 8); ctx.stroke();
+  }
+  ctx.restore();
+  ctx.drawImage(fish.flesh, 0, 0);
+}
+
+function show(count, fresh) {
+  if (species === 'bear') {
+    if (fresh || !fish || count > fish.total - fish.eaten) fish = makeFish(Math.max(1, count));
+    biteFish(fish.total - count);
+    drawFish();
+    return;
+  }
+  if (fresh || count > crumbs.length) regen(count);
+  else while (crumbs.length > count) crumbs.splice(Math.floor(Math.random() * crumbs.length), 1);
+  draw();
+}
 
 function makeCrumb() {
   // loose gaussian-ish cluster with the odd outlier — thrown, not placed
@@ -92,14 +207,15 @@ function draw() {
   }
 }
 
+let last = 0;
 tiny.api.on('crumbs', (p) => {
   if (p.win !== me) return;
-  if (p.fresh || p.count > crumbs.length) regen(p.count);
-  else while (crumbs.length > p.count) crumbs.splice(Math.floor(Math.random() * crumbs.length), 1);
-  draw();
+  last = p.count;
+  show(p.count, p.fresh);
 });
+tiny.api.on('species', (p) => { species = p.species; show(last, true); });
 
-tiny.api.call('boot').then((p) => { regen(p.count); draw(); });
+tiny.api.call('boot').then((p) => { species = p.species || 'pigeon'; last = p.count; show(p.count, true); });
 </script>
 </body>
 </html>

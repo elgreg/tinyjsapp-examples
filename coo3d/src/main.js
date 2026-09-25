@@ -99,7 +99,7 @@ let opts = {                  // persisted tray toggles
   shhh: false,                // library mode — only the occasional sound slips out
   grounded: false,            // ground business stays near the screen bottom
   noPoop: false,              // house-trained — the poop timer still runs, the squat never comes
-  species: 'pigeon',          // who's in the flock: pigeon | finch (goldfinches)
+  species: 'pigeon',          // who's in the flock: pigeon | finch (goldfinches) | bear
   count: 3,                   // pigeons in the flock, 2..20
 };
 const VOLS = { off: 0, low: 0.25, medium: 0.6, high: 1 };
@@ -184,11 +184,14 @@ function setState(app, b, s) {
   if (s === 'fly') say(app, b, b.scared ? 'scatter' : 'takeoff', b.scared);
 }
 
-// Same brain, different costumes.
+// Same brain, three costumes. Bears get salmon instead of bread and leave
+// rather more behind (a bigger poop window — see poopSize).
 const SPECIES = {
   pigeon: { icon: '🕊️', one: 'pigeon', many: 'pigeons', food: '🍞 Throw some crumbs', foodIcon: '🍞' },
   finch:  { icon: '🐤', one: 'goldfinch', many: 'goldfinches', food: '🍞 Throw some crumbs', foodIcon: '🍞' },
+  bear:   { icon: '🐻', one: 'bear', many: 'bears', food: '🐟 Toss a salmon', foodIcon: '🐟' },
 };
+const poopSize = () => (opts.species === 'bear' ? { w: 96, h: 64 } : { w: 46, h: 36 });
 const sp = () => SPECIES[opts.species] || SPECIES.pigeon;
 const mood = () => (anyCrumbs() ? sp().foodIcon : sp().icon);
 
@@ -202,7 +205,7 @@ function trayUpdate(app) {
     title: mood(),
     menu: [
       { id: 'crumbs', label: `${sp().food}  ⌘⌥X` },
-      { id: 'sweep', label: '🧹 Sweep up (crumbs & poop)  ⌘⌥⇧X', enabled: anyCrumbs() || anyPoop() },
+      { id: 'sweep', label: '🧹 Sweep up (food & poop)  ⌘⌥⇧X', enabled: anyCrumbs() || anyPoop() },
       { id: 'find', label: `👋 Where are the ${sp().many}?` },
       { separator: true },
       { id: 'more', label: `➕ One more ${sp().one} (${opts.count})`, enabled: opts.count < MAX_PIGS },
@@ -212,6 +215,7 @@ function trayUpdate(app) {
       { id: 'species', label: '🐾 Animals', submenu: [
         { id: 'sp-pigeon', label: '🕊️ Pigeons', checked: opts.species === 'pigeon' },
         { id: 'sp-finch', label: '🐤 Goldfinches', checked: opts.species === 'finch' },
+        { id: 'sp-bear', label: '🐻 Bears', checked: opts.species === 'bear' },
       ] },
       { separator: true },
       { id: 'desk', label: tick(opts.desk) + '🖥️ Live on the desktop' },
@@ -306,7 +310,8 @@ function sayVol(base) {
 // Every audible moment goes out as a kind + pan + vol; the main window's
 // page owns the actual recordings and does the mixing.
 // kinds: coo | coolong (the courtship number) | call (alarm) |
-//        takeoff (casual wings) | scatter (panicked wings) | distant
+//        takeoff (casual wings) | scatter (panicked wings) | distant |
+//        munch (a bite of food — only bears have a sound for it)
 function say(app, b, kind, loud) {
   const v = sayVol(rnd(loud ? 0.55 : 0.3, loud ? 0.9 : 0.7));
   if (!v) return;
@@ -468,9 +473,10 @@ function spawnPoop(app, b) {
   poopNext++;
   poops[win] = { at: t };      // permanent — until swept, or the slot recycles
   const h = app.window(win);
+  const ps = poopSize();
   h.setPosition(
-    Math.round(b.pos.x + HALF - 23 + rnd(-8, 8)),
-    Math.round(b.pos.y + HALF + 30),
+    Math.round(b.pos.x + HALF - ps.w / 2 + rnd(-8, 8)),
+    Math.round(b.pos.y + HALF + 48 - ps.h / 2),
   );
   h.show({ activate: false });
   tell(app, win, 'splat', { win });
@@ -622,6 +628,7 @@ function tickBird(app, b, m, mv) {
       if (b.stateT > 0 && b.stateT % 20 === 0) {
         p.count--;
         tell(app, b.pile, 'crumbs', { win: b.pile, count: p.count });
+        if (Math.random() < 0.6) say(app, b, 'munch');   // bone-crunching, for bears
         if (p.count <= 0) return finishPile(app, b.pile);
       }
     }
@@ -1041,7 +1048,8 @@ export const api = {
       }
       for (const w of POOP_POOL) {
         opened.add(w);
-        app.openWindow(w, { page: 'poop.html', title: 'Oops', size: '46x36', chrome: CHROME });
+        const ps = poopSize();
+        app.openWindow(w, { page: 'poop.html', title: 'Oops', size: `${ps.w}x${ps.h}`, chrome: CHROME });
       }
     }
 
@@ -1072,9 +1080,9 @@ export const api = {
     }
 
     if (CRUMB_POOL.includes(id)) {
-      return { count: piles[id] ? piles[id].count : 0, fresh: true };
+      return { count: piles[id] ? piles[id].count : 0, fresh: true, species: opts.species };
     }
-    if (POOP_POOL.includes(id)) return { on: !!poops[id] };
+    if (POOP_POOL.includes(id)) return { on: !!poops[id], species: opts.species };
     const b = birds[PIGS.indexOf(id)];
     return { state: b.state, env: envInfo(), shine: b.shine, species: opts.species };
   },
@@ -1085,7 +1093,10 @@ function onCommand(id, app) {
     // every window swaps its costume in place; the brain doesn't care who's wearing it
     opts.species = id.slice(3);
     applyOpts(app);
-    sweep(app);                  // new animals, clean floor
+    sweep(app);                  // new animals, clean floor (bread isn't salmon)
+    // poop windows change size with the animal; the pages redraw themselves
+    const ps = poopSize();
+    for (const w of POOP_POOL) { try { app.window(w).setSize(ps.w, ps.h); } catch (e) {} }
     setCtxMenu(app);
     app.push('species', { species: opts.species });
     lastTray = '';

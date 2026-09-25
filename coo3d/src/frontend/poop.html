@@ -7,7 +7,7 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: transparent; overflow: hidden; }
   body {
-    width: 46px; height: 36px; -webkit-user-select: none; user-select: none;
+    width: 100vw; height: 100vh; -webkit-user-select: none; user-select: none;
     opacity: 1; transition: opacity .6s ease;
   }
   body.gone { opacity: 0; }
@@ -46,9 +46,54 @@ function blob(x, y, r, sx, fill) {
   ctx.restore();
 }
 
+let species = 'pigeon';
+
+// Bears: a big dark lumpy pile — stacked, lit-from-up-right lumps with a
+// contact shadow, the odd berry seed, and a wet glint. The window is sized
+// for it by the backend (96×64 vs the pigeon's 46×36).
+function bearPile() {
+  const W = cv.width, H = cv.height;
+  ctx.save();
+  ctx.translate(W / 2 + 3, H * 0.78); ctx.scale(1, 0.3);
+  ctx.fillStyle = 'rgba(20, 14, 6, 0.35)';
+  ctx.beginPath(); ctx.arc(0, 0, W * 0.36, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  const lumps = [];
+  const n = 5 + Math.floor(rnd(0, 3));
+  for (let i = 0; i < n; i++) {
+    const layer = i < 3 ? 0 : i < 5 ? 1 : 2;           // a base row, then stacked
+    lumps.push({
+      x: W / 2 + (layer === 0 ? (i - 1) * W * 0.16 : rnd(-W * 0.12, W * 0.12)),
+      y: H * (0.7 - layer * 0.16) + rnd(-2, 2),
+      rx: W * rnd(0.12, 0.17) * (1 - layer * 0.18), ry: H * rnd(0.14, 0.19) * (1 - layer * 0.15),
+      rot: rnd(-0.5, 0.5),
+    });
+  }
+  for (const l of lumps) {
+    const g = ctx.createRadialGradient(l.x + l.rx * 0.35, l.y - l.ry * 0.45, 1, l.x, l.y, Math.max(l.rx, l.ry) * 1.2);
+    g.addColorStop(0, '#7a5a36');
+    g.addColorStop(0.5, '#4f3a22');
+    g.addColorStop(1, '#2c2013');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(l.x, l.y, l.rx, l.ry, l.rot, 0, Math.PI * 2); ctx.fill();
+  }
+  // berry seeds and the occasional fish scale — you are what you eat
+  for (let i = 0; i < 14; i++) {
+    const l = lumps[Math.floor(Math.random() * lumps.length)];
+    ctx.fillStyle = Math.random() < 0.7 ? 'rgba(120, 30, 40, 0.8)' : 'rgba(210, 205, 190, 0.7)';
+    ctx.beginPath(); ctx.arc(l.x + rnd(-l.rx, l.rx) * 0.7, l.y + rnd(-l.ry, l.ry) * 0.6, rnd(0.8, 1.5), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(255, 245, 225, 0.45)';
+  const top = lumps[lumps.length - 1];
+  ctx.beginPath(); ctx.ellipse(top.x + top.rx * 0.3, top.y - top.ry * 0.45, top.rx * 0.28, top.ry * 0.16, -0.4, 0, Math.PI * 2); ctx.fill();
+}
+
 function splat() {
-  ctx.clearRect(0, 0, 46, 36);
+  cv.width = window.innerWidth || 46;
+  cv.height = window.innerHeight || 36;
+  ctx.clearRect(0, 0, cv.width, cv.height);
   document.body.classList.remove('gone');
+  if (species === 'bear') return bearPile();
   // white body, a couple of satellite droplets, the classic olive center
   blob(23, 20, rnd(8, 11), rnd(0.9, 1.25), 'rgba(234, 232, 224, 0.95)');
   for (let i = 0; i < 2 + Math.floor(rnd(0, 2)); i++) {
@@ -65,7 +110,9 @@ function splat() {
 tiny.api.on('splat', (p) => { if (p.win === me) splat(); });
 tiny.api.on('fade', (p) => { if (p.win === me) document.body.classList.add('gone'); });
 
-tiny.api.call('boot').then((p) => { if (p.on) splat(); });
+tiny.api.on('species', (p) => { species = p.species; });
+
+tiny.api.call('boot').then((p) => { species = p.species || 'pigeon'; if (p.on) splat(); });
 </script>
 </body>
 </html>

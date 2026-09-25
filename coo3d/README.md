@@ -20,6 +20,12 @@ Animated pigeon from [AnimalMesh3D](https://www.patreon.com/cw/AnimalMesh3D)
 Goldfinch (🐾 Animals menu) based on ["Animated Sparrow – 3D Animal Model"](https://sketchfab.com/3d-models/animated-sparrow-3d-animal-model-026d23b0c0954f328694cb339ade4045)
 by [AnimalMesh 3D](https://sketchfab.com/AnimalMesh3D), CC-BY-4.0 — repainted in goldfinch colours.
 Goldfinch calls and song cut from [XC1090058](https://xeno-canto.org/1090058) by Manuel Grosselet (Moss Landing, CA) on xeno-canto, [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) — trimmed, filtered and denoised.
+Bear (🐾 Animals menu) based on ["Animated Realistic Bear – 3D Animal Model"](https://sketchfab.com/3d-models/animated-realistic-bear-3d-animal-model-77a1fcdc92e14db698767da9ee09f84a)
+by [AnimalMesh 3D](https://sketchfab.com/AnimalMesh3D), CC-BY-4.0 — trimmed to 11 of its 30 clips.
+Bear sounds cut from [National Park Service recordings](https://www.nps.gov/subjects/bears/sounds.htm):
+grumbles from "Bear with cubs" (NPS, Denali) and huffs from "Grizzly Bear (vocalizations)" (NPS/Dan Bergum),
+both public domain; roars and eating sounds from recordings credited to NPS & MSU Acoustic Atlas/Jennifer Jerrett,
+which may carry MSU rights — fine for a personal build, check before sharing further.
 
 ```sh
 tinyjs dev      # run with hot reload

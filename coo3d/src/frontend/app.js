@@ -33,7 +33,11 @@ let poopT = -10;                    // clock time the current squat started
 // ------------------------------------------------------------------- stage
 
 const W = 200;
-const renderer = new THREE.WebGLRenderer({ canvas: $('cv'), antialias: true, alpha: true });
+// Full device ratio (capped at 2). 1.5x was tried for 56% of the pixels and
+// looked grainy in the real app: 300px scaled onto a 400px Retina area is a
+// non-integer resample the compositor redoes every frame. Headless upscales
+// hid it. low-power keeps dual-GPU Macs on the iGPU.
+const renderer = new THREE.WebGLRenderer({ canvas: $('cv'), antialias: true, alpha: true, powerPreference: 'low-power' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(W, W);
 
@@ -259,11 +263,24 @@ new GLTFLoader().parse(bin, '', (gltf) => {
 
 // ------------------------------------------------------------ frame-by-frame
 
+// Frame budget: twenty windows each rendering at display refresh (120 Hz on
+// ProMotion) is most of the app's energy. Ground life renders at FPS_GROUND;
+// flight gets FPS_AIR (the goldfinch's flap strobes at 30). Keep both even
+// divisors of 60/120: 90 on a 120 Hz panel alternates 1- and 2-frame gaps,
+// which judders worse than a steady 60. Skipped rAFs just bank their time,
+// so passing the banked dt keeps clip speed and every ease rate unchanged.
+const FPS_GROUND = 30, FPS_AIR = 60;
+let banked = 0;
+
 function loop() {
   requestAnimationFrame(loop);
-  const dt = Math.min(clock.getDelta(), 0.1);
-  const t = clock.elapsedTime;
+  banked += clock.getDelta();
   if (!mixer) return;
+  const fps = state === 'fly' || state === 'land' ? FPS_AIR : FPS_GROUND;
+  if (banked < 1 / fps - 0.002) return;   // slack for rAF jitter
+  const dt = Math.min(banked, 0.1);
+  banked = 0;
+  const t = clock.elapsedTime;
 
   mixer.update(dt);
 

@@ -163,6 +163,10 @@ function rollShine() {
 for (const b of birds) b.shine = rollShine();
 
 const bwin = (app, b) => (b.winId === 'main' ? app : app.window(b.winId));
+// app.push broadcasts to EVERY window (EVAL@*) — 34 pages for one bird's
+// cue. Per-window events go to their own page only; app.window('main')
+// is a plain EVAL, main alone.
+const tell = (app, id, event, data) => app.window(id).push(event, data);
 const flock = () => birds.slice(0, opts.count);
 const anyCrumbs = () => CRUMB_POOL.some((w) => piles[w] && piles[w].count > 0);
 const anyPoop = () => POOP_POOL.some((w) => poops[w]);
@@ -173,7 +177,7 @@ function setState(app, b, s) {
   if (b.state === s) return;
   b.state = s;
   b.stateT = 0;
-  app.push('bird', { who: b.winId, state: s });
+  tell(app, b.winId, 'bird', { who: b.winId, state: s });
   // wings make noise — a getaway sounds more urgent than a commute
   if (s === 'fly') say(app, b, b.scared ? 'scatter' : 'takeoff', b.scared);
 }
@@ -284,7 +288,7 @@ function sayVol(base) {
 function say(app, b, kind, loud) {
   const v = sayVol(rnd(loud ? 0.55 : 0.3, loud ? 0.9 : 0.7));
   if (!v) return;
-  app.push('say', { who: b.winId, kind, pan: cooPan(b), vol: v });
+  tell(app, 'main', 'say', { who: b.winId, kind, pan: cooPan(b), vol: v });
 }
 
 // Too close, too fast! One pigeon's panic is everyone's panic — birds near
@@ -367,7 +371,7 @@ function dropCrumbs(app) {
   const h = app.window(win);
   h.setPosition(Math.round(piles[win].x - 75), Math.round(piles[win].y - 55));
   h.show({ activate: false });
-  app.push('crumbs', { win, count: piles[win].count, fresh: true });
+  tell(app, win, 'crumbs', { win, count: piles[win].count, fresh: true });
   // pigeons clock bread FAST — but each bird has its own reaction time,
   // and everyone drops what they were doing socially
   for (const b of flock()) {
@@ -447,7 +451,7 @@ function spawnPoop(app, b) {
     Math.round(b.pos.y + HALF + 30),
   );
   h.show({ activate: false });
-  app.push('splat', { win });
+  tell(app, win, 'splat', { win });
   raiseFlock(app);               // the splat is UNDER the birds, always
   lastTray = '';
   trayUpdate(app);
@@ -456,7 +460,7 @@ function spawnPoop(app, b) {
 function hidePoop(app, win) {
   if (!poops[win]) return;
   poops[win] = null;
-  app.push('fade', { win });     // the page fades out, then we hide it
+  tell(app, win, 'fade', { win });     // the page fades out, then we hide it
   setTimeout(() => { try { app.window(win).hide(); } catch (e) {} }, 700);
 }
 
@@ -595,7 +599,7 @@ function tickBird(app, b, m, mv) {
       b.dir = p.x >= cx ? 1 : -1;
       if (b.stateT > 0 && b.stateT % 20 === 0) {
         p.count--;
-        app.push('crumbs', { win: b.pile, count: p.count });
+        tell(app, b.pile, 'crumbs', { win: b.pile, count: p.count });
         if (p.count <= 0) return finishPile(app, b.pile);
       }
     }
@@ -779,7 +783,7 @@ function tickBird(app, b, m, mv) {
       const fd = Math.hypot(fx, fy) || 1;
       lx = fx / fd; ly = fy / fd;
     }
-    app.push('look', {
+    tell(app, b.winId, 'look', {
       who: b.winId,
       x: +lx.toFixed(2), y: +ly.toFixed(2), dir: b.dir,
       moving: Math.hypot(b.vel.x, b.vel.y) > 0.6,
@@ -941,7 +945,7 @@ function departTick(app, b) {
   b.pos.y += b.vel.y;
   bwin(app, b).setPosition(Math.round(b.pos.x), Math.round(b.pos.y));
   if ((t + b.i) % 3 === 0) {
-    app.push('look', {
+    tell(app, b.winId, 'look', {
       who: b.winId, x: +(fx / fd).toFixed(2), y: +(fy / fd).toFixed(2),
       dir: fx >= 0 ? 1 : -1, moving: true, fast: false,
       wx: Math.round(b.pos.x), wy: Math.round(b.pos.y),

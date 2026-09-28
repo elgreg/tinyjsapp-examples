@@ -92,12 +92,22 @@
     themePick.add(new Option(t.label, id));
   }
 
+  // The theme's page colour, read off a hidden `.md` of its own rather than
+  // off the preview — in Page View the preview is transparent (the paper is
+  // the sheets drawn behind it, see layoutSheets), so asking IT would answer
+  // "no colour at all".
+  const paperProbe = document.createElement('div');
+  paperProbe.className = 'md';
+  paperProbe.hidden = true;
+  document.body.appendChild(paperProbe);
+  const paperBg = () => getComputedStyle(paperProbe).backgroundColor;
+
   function applyTheme(t) {
     if (!THEMES[t]) return;
     theme = t;
     themeStyle.textContent = MD_BASE_CSS + THEMES[t].css;
     themePick.value = t;
-    previewPane.style.background = getComputedStyle(preview).backgroundColor;
+    previewPane.style.background = paperBg();
     paintDesk();
     paintFindColors();   // the default find wash follows the theme's darkness
     decorate();          // mermaid diagrams re-colour to match the new theme
@@ -106,7 +116,7 @@
   // Page View's desk: the theme's own page colour, dimmed — so Paper gets a
   // grey desk and Night a darker one, and both keep their sheets legible.
   const previewBgParts = () =>
-    (getComputedStyle(preview).backgroundColor.match(/\d+/g) || ['255', '255', '255']).slice(0, 3).map(Number);
+    (paperBg().match(/\d+/g) || ['255', '255', '255']).slice(0, 3).map(Number);
   const previewIsDark = () => {
     const [r, g, b] = previewBgParts();
     return (0.299 * r + 0.587 * g + 0.114 * b) < 128;
@@ -114,7 +124,53 @@
   function paintDesk() {
     document.body.style.setProperty('--desk',
       'rgb(' + previewBgParts().map((c) => Math.round(c * 0.72)).join(',') + ')');
+    document.body.style.setProperty('--paper', paperBg());
   }
+
+  // Page View's paper. The article stays one element (sync, Live editing and
+  // restamp all depend on that), transparent, and the SHEETS are drawn behind
+  // it in #sheets: one card from the article's top to the first page break,
+  // one between each pair of breaks, one to the end. Each break is a 44px gap
+  // in the flow, so between two cards there is only desk — two real page
+  // edges, each with its own shadow and corners. Re-laid whenever the
+  // article changes size (typing, a picture arriving, a diagram drawn, the
+  // pane resized) and after every render.
+  const sheetsEl = $('sheets');
+  let sheetsFrame = 0;
+  function layoutSheets() {
+    cancelAnimationFrame(sheetsFrame);
+    sheetsFrame = 0;
+    if (!document.body.hasAttribute('data-paged') || kind !== 'doc' || !preview.offsetParent) {
+      sheetsEl.textContent = '';
+      return;
+    }
+    const pane = previewPane.getBoundingClientRect();
+    const art = preview.getBoundingClientRect();
+    const dy = previewPane.scrollTop - pane.top;
+    const left = art.left - pane.left + previewPane.scrollLeft;
+    const cuts = [];
+    let from = art.top;
+    for (const b of preview.querySelectorAll('.pgbrk')) {
+      const r = b.getBoundingClientRect();
+      if (!r.height) continue;                 // inside something folded away
+      cuts.push([from, r.top]);
+      from = r.bottom;
+    }
+    cuts.push([from, art.bottom]);
+    while (sheetsEl.children.length > cuts.length) sheetsEl.lastChild.remove();
+    while (sheetsEl.children.length < cuts.length) sheetsEl.appendChild(document.createElement('div'));
+    cuts.forEach(([a, b], i) => {
+      const st = sheetsEl.children[i].style;
+      st.top = Math.round(a + dy) + 'px';
+      st.left = left + 'px';                   // unrounded: flush with the text column
+      st.width = art.width + 'px';
+      st.height = Math.max(0, Math.round(b - a)) + 'px';
+    });
+  }
+  const layoutSheetsSoon = () => {
+    if (!sheetsFrame) sheetsFrame = requestAnimationFrame(layoutSheets);
+  };
+  new ResizeObserver(layoutSheetsSoon).observe(preview);
 
   // Find's highlight colours (Find ▸ Find Highlight). 'default' derives from
   // the accent, with more weight on a dark page so it still carries; the
@@ -164,7 +220,7 @@
     const allWas = !!prefs.allFiles;
     const was = {};
     for (const k of ['alerts', 'emojiCodes', 'footnotes', 'math', 'mermaid',
-      'carousel', 'download', 'embed', 'pagelink']) was[k] = !!prefs[k];
+      'carousel', 'download', 'embed', 'pagelink', 'toc']) was[k] = !!prefs[k];
     prefs = { ...prefs, ...p };
     preview.classList.toggle('cap', !!prefs.captions);
     preview.classList.toggle('zoom', !!prefs.zoom);
@@ -183,11 +239,12 @@
     // "---" as Page Break and the Markdown Flavor toggles are the renderer's
     // preferences, not CSS — flipping any of them means a fresh parse
     const flavorMoved = ['alerts', 'emojiCodes', 'footnotes', 'math', 'mermaid',
-      'carousel', 'download', 'embed', 'pagelink']
+      'carousel', 'download', 'embed', 'pagelink', 'toc']
       .some((k) => !!prefs[k] !== was[k]);
     if (!!prefs.hrBreaks !== hrWas || flavorMoved) { flushLive(); render(); }
     if (!!prefs.allFiles !== allWas) tree.paint();      // hide/show the others
     document.body.toggleAttribute('data-paged', !!prefs.paged);
+    layoutSheetsSoon();
     document.body.toggleAttribute('data-hc', !!prefs.hc);
     paintDesk();
     paintFindColors();
@@ -421,6 +478,7 @@
     // every arrival re-asks git — the file may have been saved since
     if (kind === 'diff') diffView.show(path);
     paintView(true);
+    layoutSheetsSoon();                          // no paper under a picture
   }
 
   const niceBytes = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB'
@@ -605,8 +663,31 @@
   $('tgPins').onclick = () => tiny.api.call('setPinsOn', { on: !tree.pinsOn() });
   $('tgAll').onclick = () => tiny.api.call('setPref', { key: 'allFiles', value: !prefs.allFiles });
 
+  // What in a folder push can change how THIS document renders: the files
+  // that exist (a picture that was missing a moment ago may be there now —
+  // the backend watches the folder) and what a leading / means. When either
+  // moves, the preview is drawn again with the image cache emptied; while the
+  // caret is IN the preview a re-render would throw it away, so only the
+  // pictures that failed get another try.
+  let renderShape = null;
+  function rerenderForFolder(p) {
+    const shape = p ? JSON.stringify([p.root, p.roots, (p.files || []).map((f) => f.path)]) : '';
+    const was = renderShape;
+    renderShape = shape;
+    if (was === null || was === shape || kind !== 'doc') return;
+    imgCache.clear();
+    if (inPreview()) {
+      for (const img of preview.querySelectorAll('img.missing')) img.classList.remove('missing');
+      inlineImages();
+      return;
+    }
+    flushLive();
+    render();
+  }
+
   function applyProject(p) {
     tree.set(p, path);
+    rerenderForFolder(p);
     probeGit(p && p.root);
     if (!p) {                                   // you closed the folder
       setFiles(false);
@@ -926,7 +1007,7 @@
   function mermaidVars() {
     const st = getComputedStyle(preview);
     const num = (c) => (String(c).match(/[\d.]+/g) || [0, 0, 0]).slice(0, 3).map(Number);
-    const F = num(st.color), B = num(st.backgroundColor);
+    const F = num(st.color), B = num(paperBg());
     const mix = (k) => 'rgb(' + B.map((v, i2) => Math.round(v + (F[i2] - v) * k)).join(',') + ')';
     return {
       background: 'rgb(' + B.join(',') + ')',
@@ -1058,7 +1139,7 @@
     hrBreaks: prefs.hrBreaks, alerts: prefs.alerts, emojiCodes: prefs.emojiCodes,
     footnotes: prefs.footnotes, math: prefs.math, mermaid: prefs.mermaid,
     carousel: prefs.carousel, download: prefs.download, embed: prefs.embed,
-    pagelink: prefs.pagelink,
+    pagelink: prefs.pagelink, toc: prefs.toc,
   });
   function render() {
     hideImagePop();                      // the old node is about to vanish
@@ -1069,6 +1150,7 @@
     paintSource();
     pairCursors();
     decorate();                          // math → MathML, mermaid → SVG (async)
+    layoutSheetsSoon();                  // the breaks may have moved
   }
 
   // the coloured layer under the textarea (hl.js) — rebuilt with the preview,
@@ -1112,9 +1194,10 @@
   //
   // A link is a place to go, and the app window itself never navigates: the
   // web opens in your browser, a Markdown file or a picture opens as a tab
-  // here, and anything else — a PDF, a folder — goes to whatever the system
-  // opens it with. Which is also the only sane answer for an editor that
-  // understands one format.
+  // here, a folder opens its index.md (or README), and anything else — a
+  // PDF, a folder with no front page — goes to whatever the system opens it
+  // with. Which is also the only sane answer for an editor that understands
+  // one format.
   //
   // WHEN it happens is the other half. With Editable off a plain click follows
   // (there's nothing else a click could mean), but with the caret live in the
@@ -1888,7 +1971,7 @@
       box.removeAttribute('data-line');
     }
     const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-    const bg = getComputedStyle(preview).backgroundColor;
+    const bg = paperBg();
     // the clone carries the reading preferences as classes; the page width is
     // the only one that isn't, so it's written into the wrapper's max-width
     const pw = (PAGE_WIDTH[prefs.width] || PAGE_WIDTH.full)[1];
@@ -3127,11 +3210,22 @@ ${art.innerHTML}
   function restamp() {
     const tmp = document.createElement('div');
     tmp.innerHTML = renderMarkdown(renderSrc(), mdOpts());
+    // A ::: toc is derived from the headings, so typing one changes it — and
+    // it's an island (never under the caret), so its insides can simply be
+    // replaced with the fresh render's.
+    const tocs = preview.querySelectorAll('.toc');
+    const freshTocs = tmp.querySelectorAll('.toc');
+    if (tocs.length === freshTocs.length) {
+      tocs.forEach((t, k) => {
+        if (t.innerHTML !== freshTocs[k].innerHTML) t.innerHTML = freshTocs[k].innerHTML;
+      });
+    }
     // What's INSIDE a math or mermaid island doesn't count: the live one
     // holds MathML / SVG (whose foreignObject divs would match), the fresh
-    // one holds the code fallback — same document, different innards.
+    // one holds the code fallback — same document, different innards. A
+    // toc's list is the same story: its length is the headings', not its own.
     const grab = (root) => [...root.querySelectorAll(STAMPED)].filter((el) => {
-      const isl = el.closest('.mm, .math');
+      const isl = el.closest('.mm, .math, .toc');
       return !isl || isl === el;
     });
     const fresh = grab(tmp);
@@ -3518,6 +3612,147 @@ ${art.innerHTML}
       ? n.nodeValue.slice(sel.anchorOffset - 2, sel.anchorOffset - 1) : '';
     if (opensMention(before)) mentionFromPreview();
   });
+
+  // ---------------------------------------------------------------- / blocks
+  //
+  // In the editable preview, "/" typed on an empty line opens a menu of every
+  // block Nib can insert (slash.js has the catalogue). Pick one and the line
+  // becomes that block — as Markdown, so it lands in the source exactly as if
+  // typed there: the line is swapped for a token, serialized, the token's
+  // line in the source replaced by the block, and the whole thing rendered.
+  // Then the block's placeholder words come up selected, so typing replaces
+  // them. Esc leaves the "/" where you typed it — it is still a character.
+
+  const SLASH_TOKEN = 'nibslashblockhere';     // letters: its own paragraph, verbatim
+
+  // the paragraph the caret is in, if all it holds is the "/" just typed
+  function slashLine() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+    let n = sel.anchorNode;
+    while (n && n !== preview && !(n.nodeType === 1 && n.tagName === 'P')) n = n.parentNode;
+    if (!n || n === preview || n.closest('.cb-t, .toc, .dlc')) return null;
+    return n.textContent.replace(/[​ ]/g, '').trim() === '/' ? n : null;
+  }
+
+  preview.addEventListener('input', (e) => {
+    if (!editing() || e.data !== '/') return;
+    const line = slashLine();
+    if (line) openSlash(line);
+  });
+
+  function openSlash(line) {
+    const sel = window.getSelection();
+    const here = sel.getRangeAt(0).cloneRange();
+    let rect = here.getBoundingClientRect();
+    if (!rect.height) rect = line.getBoundingClientRect();
+    const items = window.nibSlashItems(prefs, { folder: tree.has() });
+    palette.open({
+      files: items.map((it) => ({
+        name: it.label, rel: it.group + '/' + it.label, kind: 'cmd',
+        cmd: { label: it.label, path: it.group, icon: it.icon }, slash: it,
+      })),
+      ordered: true,
+      placeholder: 'Insert a block…',
+      hintText: '↑↓ to choose · ⏎ inserts · esc keeps the /',
+      emptyText: 'Nothing by that name to insert',
+      at: rect.height ? rect : null,
+      pick: (f) => slashInsert(line, f.slash),
+      cancel: (byKey) => {
+        if (!byKey) return;
+        preview.focus({ preventScroll: true });
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(here);
+      },
+    });
+  }
+
+  // an empty paragraph with the caret in it — what the pickers insert at
+  function caretInto(p) {
+    p.textContent = '';
+    p.appendChild(document.createElement('br'));
+    preview.focus({ preventScroll: true });
+    const r = document.createRange();
+    r.setStart(p, 0);
+    r.collapse(true);
+    const s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+    savedRange = r.cloneRange();
+    lastSurface = 'preview';
+  }
+
+  // Select an element's text, first character to last, skipping anything
+  // that isn't words (a task box, the ZWSP perches live editing leaves).
+  function selectText(el) {
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT,
+      { acceptNode: (t) => (t.nodeValue.replace(/​/g, '').trim()
+        ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT) });
+    const first = walk.nextNode();
+    if (!first) return false;
+    let last = first;
+    for (let t = walk.nextNode(); t; t = walk.nextNode()) last = t;
+    const r = document.createRange();
+    r.setStart(first, first.nodeValue.search(/\S/));
+    r.setEnd(last, last.nodeValue.replace(/\s+$/, '').length);
+    const s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+    return true;
+  }
+
+  async function slashInsert(line, it) {
+    if (!line.isConnected || !editing()) return;
+    if (it.run === 'image' || it.run === 'link' || it.run === 'emoji') {
+      caretInto(line);
+      queueSerialize();
+      if (it.run === 'image') pickImage();
+      else if (it.run === 'link') insertFileLink();
+      else emoji.toggle();
+      return;
+    }
+    let md = it.md;
+    if (it.run === 'embed') {
+      const url = await tiny.dialog.prompt('Embed a link — YouTube, Vimeo, Spotify, Figma, CodePen…',
+        { default: 'https://', ok: 'Embed' });
+      if (!url || !/^https?:\/\/\S+$/i.test(url.trim())) { caretInto(line); return; }
+      md = '::: embed ' + url.trim() + '\n:::';
+    }
+    // the line becomes a token the serializer writes verbatim on a line of
+    // its own; whatever sits before it on that line (a "> " inside a quote)
+    // is the prefix every line of the block has to carry too
+    line.textContent = SLASH_TOKEN;
+    livePending = true;
+    flushLive();
+    const lines = ed.value.split('\n');
+    const at = lines.findIndex((l) => l.includes(SLASH_TOKEN));
+    if (at < 0) { caretInto(line); toast('Couldn’t insert that here'); return; }
+    const prefix = lines[at].slice(0, lines[at].indexOf(SLASH_TOKEN));
+    lines.splice(at, 1, ...md.split('\n').map((l) => (l ? prefix + l : prefix.trimEnd())));
+    applyWholeText(lines.join('\n'));
+    clearTimeout(renderTimer);
+    render();
+    placeAfterSlash(at, it);
+  }
+
+  // Where the caret goes once the block is on screen: its placeholder words,
+  // selected — or, for a block with nothing to type into, the line after it
+  // (made, if the block was the last thing in the document).
+  function placeAfterSlash(line, it) {
+    const block = preview.querySelector(`[data-line="${line}"]`);
+    preview.focus({ preventScroll: true });
+    if (!block) return;
+    block.scrollIntoView({ block: 'nearest' });
+    const target = !it.sel ? null : it.sel === 'self' ? block : block.querySelector(it.sel);
+    if (target && selectText(target)) return;
+    let next = block.nextElementSibling;
+    if (!next || next.tagName !== 'P') {
+      next = document.createElement('p');
+      block.after(next);
+    }
+    caretInto(next);
+  }
 
   // Go ▸ Link to a File… is the same picker without the @ — it inserts at the
   // caret, and takes the character it replaces with it (there isn't one).

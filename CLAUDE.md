@@ -25,7 +25,26 @@ mac, `win`, `linux.<arch>`), and downloads that block's `url` verifying
 static payload. So a release = upload assets to the tag, then push updated
 manifest/catalog urls. Uploading needs `gh` authed with repo scope.
 
-### macOS / Windows
+### Windows — normally CI: the `windows-release` workflow
+
+```
+git push                                   # CI builds what is COMMITTED
+gh workflow run windows-release.yml -R tarwin/tinyjsapp-examples \
+  -f tinyjs_tag=v0.42.0 -f apps="nib"      # apps empty = whole fleet
+gh run watch <id> --exit-status ; git pull --rebase origin main
+```
+
+Manual dispatch only, twin of linux-release (~1 min per app). On
+windows-latest it publishes with System32's bsdtar forced first on PATH,
+checks each zip with Expand-Archive, smoke-runs the extracted exe for 10 s,
+then uploads to `<dir>-v<ver>`, merges the `win` blocks into manifests +
+catalog (`shelf/merge-release-win.js`; notes reuse the mac notes when the
+mac release is the same version, else pass `--notes-file`), bumps README's
+Windows links, and pushes. Left for you: ../tinyjsapp/docs/index.html's
+Windows link. Verified on nib 0.4.0 (2026-09-25). The by-hand route below
+is the fallback.
+
+### macOS / Windows by hand
 
 ⚠ Windows: run `tinyjs publish` from PowerShell/cmd, NOT Git Bash. The
 zip is written by `tar -a -cf` and Git Bash’s GNU tar shadows Windows’
@@ -53,6 +72,29 @@ Check before uploading: `Expand-Archive` must yield 3 entries.
    or model a merge tool on merge-manifest-linux.js.
 5. Update the download line in README.md (+ the app's own README for mac).
 6. Verify urls (`curl -fsSLI`), commit manifests + catalog + README, push.
+
+### macOS — one build per CPU (since 2026-09-24, tinyjs 0.42)
+
+Every mac release ships an Apple Silicon AND an Intel build. From this Mac,
+with TINYJS_SIGN_IDENTITY + TINYJS_NOTARY_PROFILE set:
+
+```
+sh shelf/release-mac.sh <dir>              # both arches; or: <dir> x86_64
+gh release upload <dir>-v<ver> _builds/<dir>-<ver>-macos-*.dmg \
+  _builds/<dir>/<dir>-<ver>-macos-*.zip -R tarwin/tinyjsapp-examples
+node shelf/merge-manifest-mac.js [--notes-file notes.json] <dir> …
+node shelf/gen-catalog.js && node shelf/readme-mac-links.js
+```
+
+release-mac.sh builds, notarizes, staples and stages each arch
+(`_builds/<dir>-<ver>-macos-<arch>.dmg` + `_builds/<dir>/…-macos-<arch>.zip`,
+the zip made from the STAPLED app). The manifest gets a `mac.{arm64,x86_64}`
+block; the top level stays the arm64 build, because every app shipped
+before tinyjs 0.42 reads only the top level and all of those are arm64.
+The catalog's top-level dmg/url is arm64 for the same reason (Shelf < 0.2.9).
+Older releases name the arm64 files without the suffix (`<dir>-<ver>.dmg`);
+the tools accept both. Then steps 5–6 below (the site's mac buttons in
+../tinyjsapp/docs/index.html carry both arch links).
 
 ### Linux — normally CI: the `linux-release` workflow
 

@@ -4,7 +4,7 @@
 
 <img src="../_images/nib.webp" alt="nib screenshot" width="640">
 
-**⬇ Download:** [nib-0.3.0.dmg](https://github.com/tarwin/tinyjsapp-examples/releases/download/nib-v0.3.0/nib-0.3.0.dmg) **(5.7 MB)** — prebuilt, signed & notarized; open and drag to Applications.
+**⬇ Download:** macOS [Apple Silicon](https://github.com/tarwin/tinyjsapp-examples/releases/download/nib-v0.4.0/nib-0.4.0-macos-arm64.dmg) / [Intel](https://github.com/tarwin/tinyjsapp-examples/releases/download/nib-v0.4.0/nib-0.4.0-macos-x86_64.dmg) **(5.7 MB)** — prebuilt, signed & notarized; open and drag to Applications.
 
 A tiny Markdown editor — one native window per document. Plain JavaScript,
 zero dependencies, including the Markdown renderer.
@@ -128,9 +128,13 @@ underneath does, though — `hl.js` wraps every link in a span carrying the
 target it already parsed — so the pointer is hit-tested against those boxes
 (the row found by binary search, because this runs on `mousemove`), and the
 same span tells the click what it landed on. A `.md` or a picture opens as a
-tab here, a `#heading` scrolls, `https:` goes to your browser, and a PDF or a
-folder goes to whatever the system opens it with; a link pointing at nothing
-says so rather than doing nothing.
+tab here, a `#heading` scrolls, `https:` goes to your browser, a folder —
+`[specs](/specs/)` — opens its `index.md` (or its README) the way a static
+site would, a link written without its extension — `/guide/setup`, the
+VitePress / Docusaurus spelling — finds `guide/setup.md` (before a folder of
+the same name, as those sites do), and a PDF or a folder with no front page goes to whatever the
+system opens it with; a link pointing at nothing says so rather than doing
+nothing.
 
 **Find** (**⌘F**) is a bar over the document rather than a dialog, with
 **⌘G / ⇧⌘G** to step, a live match count, **Aa**, whole-word and **`.*`** —
@@ -172,8 +176,17 @@ a tree down the left of every document window (**⌘⇧B**, and with no folder
 open that panel is where you choose one), and opening one puts
 it in **that window as a tab** — a strip appears along the top once a window
 holds two, with a dot for unsaved work, drag to reorder, ⌘W to close the tab
-(the last one closes the window) and **⌘⇧N** for a window of its own. Windows
-open at whatever size you left the last one.
+(the last one closes the window), **⌘⇧T** to bring back the last one you
+closed (newest first, into the window it left) and **⌘⇧N** for a window of
+its own. Windows open at whatever size you left the last one.
+
+The tree **watches the folder**: a picture saved into it by another app, a
+file renamed in Finder, a `git checkout` — the tree catches up on its own, and
+an open document whose pictures or links just started (or stopped) resolving
+re-renders. One `tjs.watch` per directory, since the kernel watch isn't
+recursive; File ▸ Refresh Folder stays for what that misses. And whichever
+file comes on screen, the tree **reveals** it — the folders above it open and
+its row scrolls into view.
 
 A folder belongs to the **windows that asked for it**, not to the app: a
 window opened for one file — from Finder, the Dock, the CLI, the Welcome
@@ -330,7 +343,12 @@ promise — Nib touches nothing inside your folder — covers the settings file
 too.
 
 **Settings** (**⌘,**) is its own window — sections down the left, **two tabs
-across the top**. It opens from a document, from the Welcome screen, or from
+across the top**, Project first when a folder is open. Nothing in it applies
+until **Save** (**⌘S**); **Cancel** or **esc** throws the changes away. The
+window still shows every row as it *will* be — the backend applies the staged
+changes to copies of the settings and answers with those, provenance and all —
+so ↺ and the *set here* / *from Mine* tags are honest before you commit.
+Shortcuts, AI and Actions are editors of their own and apply as you go. It opens from a document, from the Welcome screen, or from
 nothing at all; it used to be a sheet inside a document window, which meant
 conjuring an empty document to hold it when you had none, and that was silly.
 The Project tab only exists while the window in front of you is actually *in*
@@ -699,6 +717,10 @@ and `::: pagelink [Title](./page)` cards with the body as their description,
 `::: embed <url>` (oEmbed through the backend — YouTube, Vimeo, Spotify,
 Figma, CodePen and friends as plain iframes; a provider that wants its own
 script running becomes a link card instead, and the body is the caption),
+`::: toc [title] [2-3]` (a linked table of contents from the same headings the
+outline shows — written as a placeholder and filled in once the whole
+document is parsed, so it sees the headings below it; an island in the
+editable preview, so it round-trips as the one line you wrote),
 `==highlight==`, YAML front-matter
 as its own quiet block instead of a rule and a paragraph, and page breaks —
 `\newpage` or `<!-- pagebreak -->` alone on a line (a faint dotted line on
@@ -708,8 +730,11 @@ every dash rule one too (`***` and `___` stay rules). **Preview ▸
 Page View** shows the document Google-Docs-style — sheets of paper on a desk,
 each break starting a new sheet, the desk colour derived from the theme's own
 page — and **Page Width** gains **A4** and **US Letter** so the sheet is real
-paper. All CSS: the preview's DOM never changes, so editing and sync ride
-along untouched, and print styles switch it back off (paper is paper).
+paper. The preview's DOM never changes, so editing and sync ride along
+untouched: the article goes transparent and the paper is a layer of cards
+behind it, one per page, laid out from where the breaks fall — so each page
+has its own corners and shadow and a break is just desk. Print styles switch
+it back off (paper is paper).
 
 The interesting part is **closing**. macOS gives an app no veto over the red
 ✗ — tinyjs's `onWindowClosed` fires *after* the window is gone — so instead
@@ -757,7 +782,13 @@ The techniques on show:
    textarea stays the document of record, written to from the other end.
    `live.js` adds the input rules and the selection bubble on top, doing its
    own DOM surgery rather than trusting `execCommand('formatBlock')` — that
-   one loses the caret exactly when you need it, on an empty line.
+   one loses the caret exactly when you need it, on an empty line. And **/**
+   on an empty line opens a block menu (`slash.js` is the catalogue: tables,
+   callouts, code, tabs, the flavour's extras…). A pick doesn't build DOM at
+   all — the line becomes a token, the page serializes, the token's source
+   line is swapped for the block's Markdown and everything re-renders — so an
+   inserted block is byte-for-byte what typing it would have been, and its
+   placeholder words come up selected to type over.
 
 **Nib is a command, too.** **File ▸ Install ‘nib’ Shell Command…** (also a
 link at the foot of the Welcome window, since Windows and Linux run without a
